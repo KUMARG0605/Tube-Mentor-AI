@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# Env
+.env
+client_secrets.json
+token.json
+
+# Outputs
+outputs/
+*.pdf
+*.mp4
+*.mp3
+*.wav
+*.pptx
+
+# Node
+node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+PROGRESS_NOTES.py
+
+# Notes
+Notes-mentor/
