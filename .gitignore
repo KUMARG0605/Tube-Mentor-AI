@@ -28,7 +28,7 @@ frontend/dist/
 # IDE
 .vscode/
 .idea/
-PROGRESS_NOTES.py
+PROGRESS_NOTES.py/
 
 # Notes
 Notes-mentor/
