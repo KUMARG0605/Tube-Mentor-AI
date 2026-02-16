@@ -58,23 +58,34 @@ def compute_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
     return float(np.dot(embedding1, embedding2))
 
 
-def create_video_text(title: str, description: str = "", summary: str = "") -> str:
+def create_video_text(title: str, description: str = "", summary: str = "", transcript: str = "") -> str:
     """
     Combine video metadata into a single text for embedding.
+    Prioritizes transcript content for better semantic matching.
     
     Args:
         title: Video title (required)
         description: Video description (optional)
         summary: AI-generated summary (optional)
+        transcript: Video transcript content (optional) - KEY for semantic matching
     
     Returns:
         Combined text string for embedding
     """
     parts = [title]
     
+    # Include summary if available (concise understanding)
     if summary:
-        parts.append(summary[:500])
+        parts.append(summary[:300])
+    
+    # Include transcript for actual content-based matching
+    # This is the KEY content that makes recommendations relevant
+    if transcript:
+        # Use meaningful portion of transcript for semantic understanding
+        clean_transcript = transcript.replace('\n', ' ').strip()[:800]
+        parts.append(clean_transcript)
     elif description:
+        # Fallback to description if no transcript
         clean_desc = description.replace('\n', ' ')[:300]
         parts.append(clean_desc)
     
