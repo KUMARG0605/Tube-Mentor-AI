@@ -33,7 +33,7 @@ export default function HomePage() {
   }
 
   return (
-    <div>
+    <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Hero Section */}
       <div className="text-center py-12">
         <div className="flex items-center justify-center gap-3 mb-4">

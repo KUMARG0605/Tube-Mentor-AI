@@ -1,20 +1,23 @@
 """Recommendations router - AI-powered video recommendations using embeddings."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy.orm import Session
 
+from app.database import get_db
+from app.models.db_models import Video, Summary, Transcript
 from app.services.vector_store import get_vector_store
 from app.services.embeddings import generate_embedding, create_video_text
 
 
-router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
+router = APIRouter(prefix="/api/recommendations", tags=["Recommendations"])
 
 
 class IndexVideoRequest(BaseModel):
     """Request body for adding a video to the index."""
     video_id: str
-    title: str
+    title: Optional[str] = None
     description: Optional[str] = ""
     summary: Optional[str] = ""
     thumbnail_url: Optional[str] = ""
@@ -46,25 +49,55 @@ class IndexStatsResponse(BaseModel):
 
 
 @router.post("/index", response_model=dict)
-async def index_video(request: IndexVideoRequest):
-    """Add a video to the recommendation index."""
+async def index_video(request: IndexVideoRequest, db: Session = Depends(get_db)):
+    """Add a video to the recommendation index. Uses TRANSCRIPT for content matching."""
     store = get_vector_store()
     
+    # Get video info from DB if not provided
+    title = request.title or ""
+    description = request.description or ""
+    summary_text = request.summary or ""
+    thumbnail_url = request.thumbnail_url or ""
+    channel_name = request.channel_name or ""
+    transcript_text = ""  # KEY: Transcript for content-based matching
+    
+    if not title:
+        # Fetch from database
+        video = db.query(Video).filter(Video.video_id == request.video_id).first()
+        if video:
+            title = str(video.title)
+            thumbnail_url = str(video.thumbnail_url or "") or thumbnail_url
+            channel_name = str(video.channel_name or "") or channel_name
+        else:
+            title = f"Video {request.video_id}"
+    
+    if not summary_text:
+        summary_obj = db.query(Summary).filter(Summary.video_id == request.video_id).first()
+        if summary_obj:
+            summary_text = str(summary_obj.summary_text or "")
+    
+    # Always fetch transcript - it's the KEY content for similarity!
+    transcript = db.query(Transcript).filter(Transcript.video_id == request.video_id).first()
+    if transcript:
+        transcript_text = str(transcript.content or "")
+    
+    # Create embedding from title + summary + TRANSCRIPT (content-based)
     text = create_video_text(
-        request.title,
-        request.description or "",
-        request.summary or ""
+        str(title), 
+        str(description), 
+        str(summary_text),
+        transcript_text  # This is the key content!
     )
     embedding = generate_embedding(text)
     
     added = store.add_video(
         video_id=request.video_id,
-        title=request.title,
+        title=str(title),
         embedding=embedding,
-        description=request.description or "",
-        summary=request.summary or "",
-        thumbnail_url=request.thumbnail_url or "",
-        channel_name=request.channel_name or "",
+        description=str(description),
+        summary=str(summary_text),
+        thumbnail_url=str(thumbnail_url),
+        channel_name=str(channel_name),
     )
     
     if added:
@@ -177,41 +210,53 @@ async def get_index_stats():
 
 @router.post("/index-all", response_model=dict)
 async def index_all_videos():
-    """Index all videos from the database that have summaries."""
+    """Index all videos from the database that have transcripts."""
     from app.database import SessionLocal
-    from app.models.db_models import Video, Summary
+    from app.models.db_models import Video, Summary, Transcript
     
     store = get_vector_store()
     db = SessionLocal()
     
     try:
-        videos = db.query(Video).join(Summary).all()
+        # Get videos with transcripts (transcript = actual content)
+        videos = db.query(Video).join(Transcript).all()
         
         indexed = 0
         skipped = 0
         
         for video in videos:
-            if store.has_video(video.video_id):
+            vid_id = str(video.video_id)
+            if store.has_video(vid_id):
                 skipped += 1
                 continue
             
-            summary_text = video.summary.content if video.summary else ""
+            # Get transcript content - KEY for content-based matching
+            transcript_text = ""
+            transcript = db.query(Transcript).filter(Transcript.video_id == vid_id).first()
+            if transcript:
+                transcript_text = str(transcript.content or "")
+            
+            summary_text = ""
+            summary = db.query(Summary).filter(Summary.video_id == vid_id).first()
+            if summary:
+                summary_text = str(summary.summary_text or "")
             
             text = create_video_text(
-                video.title,
-                video.description or "",
-                summary_text
+                str(video.title),
+                str(video.description or ""),
+                summary_text,
+                transcript_text  # Include transcript!
             )
             embedding = generate_embedding(text)
             
             store.add_video(
-                video_id=video.video_id,
-                title=video.title,
+                video_id=vid_id,
+                title=str(video.title),
                 embedding=embedding,
-                description=video.description or "",
+                description=str(video.description or ""),
                 summary=summary_text,
-                thumbnail_url=video.thumbnail_url or "",
-                channel_name=video.channel_name or "",
+                thumbnail_url=str(video.thumbnail_url or ""),
+                channel_name=str(video.channel_name or ""),
             )
             indexed += 1
         

@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     YOUTUBE_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     
+    # Phase 3 API Keys (Content Generation)
+    UNSPLASH_API_KEY: str = ""       # For image search
+    ELEVENLABS_API_KEY: str = ""     # For text-to-speech
+    
     # Groq LLM Settings
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_TEMPERATURE: float = 0.7

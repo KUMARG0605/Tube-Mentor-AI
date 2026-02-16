@@ -51,6 +51,7 @@ class VideoVectorStore:
         embedding: Optional[np.ndarray] = None,
         description: str = "",
         summary: str = "",
+        transcript: str = "",
         thumbnail_url: str = "",
         channel_name: str = "",
     ) -> bool:
@@ -60,7 +61,7 @@ class VideoVectorStore:
         
         if embedding is None:
             from app.services.embeddings import create_video_text
-            text = create_video_text(title, description, summary)
+            text = create_video_text(title, description, summary, transcript)
             embedding = generate_embedding(text)
         
         if embedding.ndim == 1:

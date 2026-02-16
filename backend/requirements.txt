@@ -15,12 +15,16 @@ groq==0.9.0
 reportlab==4.1.0
 
 # Phase 2 - Intelligence Layer
-sentence-transformers==2.2.2
-faiss-cpu
+faiss-cpu 
+sentence-transformers
 numpy
-faiss-gpu==1.7.4.post2
+
+# Phase 3 - Content Generation
+python-pptx
+moviepy
+httpx
+
 # Utilities
 python-dotenv==1.0.1
 pydantic[email]==2.8.2
 pydantic-settings==2.4.0
-httpx==0.27.0

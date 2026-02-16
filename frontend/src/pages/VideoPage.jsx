@@ -15,6 +15,7 @@ import {
 
 import QuizCard from '../components/QuizCard'
 import LoadingSpinner from '../components/LoadingSpinner'
+import ContentTools from '../components/ContentTools'
 import { fetchTranscript, generateSummary, generateQuiz, generatePDF, downloadPDF, indexVideo, getSimilarVideos } from '../services/api'
 
 export default function VideoPage() {
@@ -50,7 +51,8 @@ export default function VideoPage() {
       const { data } = await fetchTranscript(videoId)
       setTranscript(data)
       toast.success('Transcript loaded!')
-      handleIndexAndFetchRecommendations()
+      // Fetch recommendations from already indexed videos (don't index yet)
+      fetchRecommendationsOnly()
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to fetch transcript.')
     } finally {
@@ -58,6 +60,25 @@ export default function VideoPage() {
     }
   }
 
+  // Fetch similar videos without indexing current video
+  const fetchRecommendationsOnly = async () => {
+    setLoadingRecommendations(true)
+    try {
+      const { data } = await getSimilarVideos(videoId, 5)
+      const filteredRecommendations = data.recommendations?.filter(
+        rec => rec.video_id !== videoId
+      ) || []
+      setRecommendations(filteredRecommendations)
+    } catch (err) {
+      // Video not indexed yet - that's OK, will be indexed after summary
+      console.log('Recommendations not available yet:', err.message)
+      setRecommendations([])
+    } finally {
+      setLoadingRecommendations(false)
+    }
+  }
+
+  // Index video AFTER summary is generated (richer content for better matching)
   const handleIndexAndFetchRecommendations = async () => {
     setLoadingRecommendations(true)
     try {
@@ -86,6 +107,10 @@ export default function VideoPage() {
       const { data } = await generateSummary(videoId)
       setSummary(data)
       toast.success('Summary generated!')
+      
+      // Index video with rich content (summary) for better recommendations
+      // This happens after summary so we have better content for similarity matching
+      handleIndexAndFetchRecommendations()
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Summary generation failed.')
     } finally {
@@ -135,7 +160,7 @@ export default function VideoPage() {
   ]
 
   return (
-    <div>
+    <div className="max-w-7xl mx-auto px-4 py-6">
       <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-primary text-sm mb-4 transition-colors">
         <FaArrowLeft /> Back to Search
       </Link>
@@ -274,9 +299,9 @@ export default function VideoPage() {
         </div>
       </div>
 
-      {/* Similar Videos Section */}
-      {(recommendations.length > 0 || loadingRecommendations) && (
-        <div className="max-w-6xl mx-auto px-4 mt-8 mb-8">
+      {/* Similar Videos Section - Always show after transcript */}
+      {transcript && (
+        <div className="mt-8 mb-8">
           <div className="bg-secondary rounded-xl p-6">
             <div className="flex items-center gap-2 mb-4">
               <FaThumbsUp className="text-primary" />
@@ -293,7 +318,7 @@ export default function VideoPage() {
                 <FaSpinner className="animate-spin text-primary text-xl mr-2" />
                 <span className="text-gray-400">Finding similar videos...</span>
               </div>
-            ) : (
+            ) : recommendations.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {recommendations.map((rec) => (
                   <Link
@@ -327,16 +352,21 @@ export default function VideoPage() {
                   </Link>
                 ))}
               </div>
-            )}
-
-            {!loadingRecommendations && recommendations.length === 0 && (
+            ) : (
               <p className="text-gray-500 text-sm text-center py-4">
-                No similar videos found yet. Try watching more videos!
+                No similar videos found yet. Watch more videos to get personalized recommendations!
               </p>
             )}
           </div>
         </div>
       )}
+
+      {/* Phase 3: Content Generation Tools */}
+      <ContentTools
+        videoId={videoId}
+        hasTranscript={!!transcript}
+        hasSummary={!!summary}
+      />
     </div>
   )
 }
