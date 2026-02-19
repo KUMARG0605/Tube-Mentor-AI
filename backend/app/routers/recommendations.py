@@ -4,11 +4,13 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
+import numpy as np
 
 from app.database import get_db
 from app.models.db_models import Video, Summary, Transcript
 from app.services.vector_store import get_vector_store
-from app.services.embeddings import generate_embedding, create_video_text
+from app.services.embeddings import generate_embedding, create_video_text, compute_similarity
+from app.services.youtube_search import search_videos
 
 
 router = APIRouter(prefix="/api/recommendations", tags=["Recommendations"])
@@ -269,3 +271,229 @@ async def index_all_videos():
     
     finally:
         db.close()
+
+
+# ============== Global YouTube Recommendations ==============
+
+class GlobalRecommendationResult(BaseModel):
+    """A recommendation from global YouTube search."""
+    video_id: str
+    title: str
+    channel_name: str
+    description: str
+    thumbnail_url: str
+    published_at: str
+    similarity_score: float
+
+
+class GlobalRecommendationsResponse(BaseModel):
+    """Response with global YouTube recommendations."""
+    source_video_id: Optional[str] = None
+    source_script: Optional[str] = None
+    recommendations: List[GlobalRecommendationResult]
+    search_query: str
+    total_searched: int
+
+
+@router.get("/global/{video_id}", response_model=GlobalRecommendationsResponse)
+async def get_global_recommendations(
+    video_id: str,
+    k: int = Query(default=5, ge=1, le=10, description="Number of recommendations"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get recommendations from global YouTube based on video content.
+    
+    This searches YouTube globally versus the script/content of the video,
+    then uses embedding similarity to rank the most relevant results.
+    """
+    # Get video content
+    video = db.query(Video).filter(Video.video_id == video_id).first()
+    summary = db.query(Summary).filter(Summary.video_id == video_id).first()
+    transcript = db.query(Transcript).filter(Transcript.video_id == video_id).first()
+    
+    if not summary and not transcript:
+        raise HTTPException(
+            404, 
+            "No content found for this video. Generate summary/transcript first."
+        )
+    
+    title = video.title if video else ""
+    content = summary.summary_text if summary else ""
+    transcript_text = transcript.content if transcript else ""
+    
+    # Create source embedding from the video's content
+    source_text = create_video_text(title, "", content, transcript_text)
+    source_embedding = generate_embedding(source_text)
+    
+    # Extract keywords for YouTube search
+    search_query = _extract_search_query(title, content)
+    
+    # Search YouTube globally
+    youtube_results = search_videos(search_query, max_results=20)
+    
+    if not youtube_results:
+        return GlobalRecommendationsResponse(
+            source_video_id=video_id,
+            recommendations=[],
+            search_query=search_query,
+            total_searched=0
+        )
+    
+    # Generate embeddings for YouTube results and compare
+    ranked_results = []
+    
+    for yt_video in youtube_results:
+        # Skip the same video
+        if yt_video["video_id"] == video_id:
+            continue
+        
+        # Create embedding from YouTube video metadata
+        yt_text = create_video_text(
+            yt_video["title"],
+            yt_video["description"],
+            "",  # No summary available
+            ""   # No transcript available
+        )
+        yt_embedding = generate_embedding(yt_text)
+        
+        # Compute similarity
+        similarity = compute_similarity(source_embedding, yt_embedding)
+        
+        ranked_results.append({
+            **yt_video,
+            "similarity_score": float(similarity)
+        })
+    
+    # Sort by similarity (highest first)
+    ranked_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+    
+    # Take top k results
+    top_results = ranked_results[:k]
+    
+    recommendations = [
+        GlobalRecommendationResult(
+            video_id=r["video_id"],
+            title=r["title"],
+            channel_name=r["channel_name"],
+            description=r["description"][:200] + "..." if len(r["description"]) > 200 else r["description"],
+            thumbnail_url=r["thumbnail_url"],
+            published_at=r["published_at"],
+            similarity_score=round(r["similarity_score"], 4)
+        )
+        for r in top_results
+    ]
+    
+    return GlobalRecommendationsResponse(
+        source_video_id=video_id,
+        recommendations=recommendations,
+        search_query=search_query,
+        total_searched=len(youtube_results)
+    )
+
+
+@router.post("/global/from-script", response_model=GlobalRecommendationsResponse)
+async def get_recommendations_from_script(
+    script: str,
+    k: int = Query(default=5, ge=1, le=10)
+):
+    """
+    Get global YouTube recommendations based on a script/content.
+    
+    Searches YouTube and uses embedding similarity to find the most
+    relevant videos matching the provided script content.
+    """
+    if len(script) < 50:
+        raise HTTPException(400, "Script must be at least 50 characters")
+    
+    # Generate embedding for the script
+    script_embedding = generate_embedding(script[:2000])
+    
+    # Extract search query from script
+    search_query = _extract_search_query("", script)
+    
+    # Search YouTube
+    youtube_results = search_videos(search_query, max_results=20)
+    
+    if not youtube_results:
+        return GlobalRecommendationsResponse(
+            source_script=script[:100] + "...",
+            recommendations=[],
+            search_query=search_query,
+            total_searched=0
+        )
+    
+    # Rank by embedding similarity
+    ranked_results = []
+    
+    for yt_video in youtube_results:
+        yt_text = create_video_text(
+            yt_video["title"],
+            yt_video["description"],
+            "", ""
+        )
+        yt_embedding = generate_embedding(yt_text)
+        similarity = compute_similarity(script_embedding, yt_embedding)
+        
+        ranked_results.append({
+            **yt_video,
+            "similarity_score": float(similarity)
+        })
+    
+    ranked_results.sort(key=lambda x: x["similarity_score"], reverse=True)
+    top_results = ranked_results[:k]
+    
+    recommendations = [
+        GlobalRecommendationResult(
+            video_id=r["video_id"],
+            title=r["title"],
+            channel_name=r["channel_name"],
+            description=r["description"][:200] + "..." if len(r["description"]) > 200 else r["description"],
+            thumbnail_url=r["thumbnail_url"],
+            published_at=r["published_at"],
+            similarity_score=round(r["similarity_score"], 4)
+        )
+        for r in top_results
+    ]
+    
+    return GlobalRecommendationsResponse(
+        source_script=script[:100] + "...",
+        recommendations=recommendations,
+        search_query=search_query,
+        total_searched=len(youtube_results)
+    )
+
+
+def _extract_search_query(title: str, content: str) -> str:
+    """Extract key search terms from content for YouTube search."""
+    import re
+    
+    # Combine title and content
+    full_text = f"{title} {content}"
+    
+    # Remove common words and extract key terms
+    stopwords = {
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+        'should', 'may', 'might', 'must', 'shall', 'to', 'of', 'in', 'for',
+        'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
+        'before', 'after', 'above', 'below', 'between', 'under', 'again',
+        'further', 'then', 'once', 'and', 'but', 'if', 'or', 'because',
+        'until', 'while', 'this', 'that', 'these', 'those', 'it', 'its',
+        'they', 'them', 'their', 'what', 'which', 'who', 'whom', 'when',
+        'where', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more',
+        'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own',
+        'same', 'so', 'than', 'too', 'very', 'just', 'also', 'now', 'here',
+        'there', 'can', 'about', 'like', 'your', 'you', 'we', 'our', 'i', 'me'
+    }
+    
+    # Tokenize and filter
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', full_text.lower())
+    keywords = [w for w in words if w not in stopwords]
+    
+    # Get most frequent keywords
+    from collections import Counter
+    word_counts = Counter(keywords)
+    top_keywords = [word for word, count in word_counts.most_common(5)]
+    
+    return " ".join(top_keywords) if top_keywords else title[:50]

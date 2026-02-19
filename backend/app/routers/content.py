@@ -358,18 +358,24 @@ async def get_video_status():
 @router.post("/video/generate/{video_id}")
 async def generate_video(
     video_id: str,
-    include_audio: bool = False,
+    include_audio: bool = True,
+    include_bgm: bool = True,
+    include_captions: bool = True,
     voice_id: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Generate a video from slides and optional audio narration.
+    """Generate a complete video with animations, voice, BGM, and captions.
     
-    This is a complex operation that:
-    1. Creates slides from summary
-    2. Optionally generates audio narration
-    3. Combines into a video
+    Creates a professional video with:
+    - Animated intro with title
+    - Content sections with smooth transitions
+    - Voice narration (ElevenLabs TTS)
+    - Background music
+    - On-screen captions
+    - Subscribe/like ending
     """
-    from app.services.video_generator import get_video_status, generate_slideshow_video
+    from app.services.video_generator import get_video_status, generate_complete_video
+    from app.services.script_generator import generate_video_script
     
     # Check if video generation is available
     status = get_video_status()
@@ -379,46 +385,30 @@ async def generate_video(
     # Get content
     video = db.query(Video).filter(Video.video_id == video_id).first()
     summary_obj = db.query(Summary).filter(Summary.video_id == video_id).first()
+    transcript_obj = db.query(Transcript).filter(Transcript.video_id == video_id).first()
     
     if not summary_obj:
         raise HTTPException(404, "Summary not found. Generate summary first.")
     
     title = video.title if video else f"Video {video_id}"
-    key_topics = summary_obj.key_topics or []
+    summary_text = summary_obj.summary_text or ""
+    transcript_text = transcript_obj.content if transcript_obj else ""
     
-    # Create slides data
-    slides = [
-        {"type": "text", "content": title, "duration": 5.0},
-    ]
+    # Generate script from content
+    script_result = generate_video_script(
+        title=title,
+        summary=summary_text,
+        transcript=transcript_text,
+        duration=10
+    )
     
-    # Add topic slides
-    for topic in key_topics[:5]:
-        slides.append({
-            "type": "text",
-            "content": topic,
-            "duration": 8.0
-        })
-    
-    # Add conclusion
-    slides.append({
-        "type": "text",
-        "content": "Thank you for watching!",
-        "duration": 3.0
-    })
-    
-    # Generate audio if requested
-    audio_path = None
-    if include_audio:
-        from app.services.voice_service import generate_speech
-        text = summary_obj.summary_text[:3000]
-        audio_result = await generate_speech(text, voice_id=voice_id)
-        if audio_result["success"]:
-            audio_path = audio_result["filepath"]
-    
-    # Generate video
-    result = generate_slideshow_video(
-        slides=slides,
-        audio_path=audio_path,
+    # Generate complete video with all features
+    result = await generate_complete_video(
+        script=script_result["script"],
+        title=title,
+        voice_id=voice_id if include_audio else None,
+        include_bgm=include_bgm,
+        include_captions=include_captions,
         output_filename=f"video_{video_id}.mp4"
     )
     
@@ -428,6 +418,11 @@ async def generate_video(
             "filename": result["filename"],
             "filepath": result["filepath"],
             "duration_seconds": result["duration_seconds"],
+            "features": {
+                "has_voice": result.get("has_voice", False),
+                "has_bgm": result.get("has_bgm", False),
+                "has_captions": result.get("has_captions", False),
+            },
             "download_url": f"/api/content/video/download/{result['filename']}"
         }
     else:

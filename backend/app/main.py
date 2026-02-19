@@ -28,6 +28,15 @@ except ImportError:
     content = None
     print("⚠️ Phase 3 (Content Generation) disabled - install: pip install python-pptx moviepy")
 
+# Phase 4: Publishing Agent (optional - requires google-auth-oauthlib)
+PHASE4_ENABLED = False
+try:
+    from app.routers import publish
+    PHASE4_ENABLED = True
+except ImportError:
+    publish = None
+    print("⚠️ Phase 4 (Publishing) disabled - install: pip install google-auth-oauthlib")
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
@@ -64,6 +73,10 @@ if PHASE2_ENABLED and recommendations is not None:
 if PHASE3_ENABLED and content is not None:
     app.include_router(content.router)
 
+# Phase 4 (Publishing Agent) - optional
+if PHASE4_ENABLED and publish is not None:
+    app.include_router(publish.router)
+
 
 @app.get("/")
 def root():
@@ -83,6 +96,9 @@ def root():
     if PHASE3_ENABLED:
         endpoints["content"] = "/api/content/"
     
+    if PHASE4_ENABLED:
+        endpoints["publish"] = "/api/publish/"
+    
     return {
         "app": "TubeMentor AI",
         "version": "1.0.0",
@@ -90,7 +106,7 @@ def root():
             "phase1_core": True,
             "phase2_intelligence": PHASE2_ENABLED,
             "phase3_content": PHASE3_ENABLED,
-            "phase4_multimodal": False,
+            "phase4_publishing": PHASE4_ENABLED,
         },
         "endpoints": endpoints,
     }
@@ -102,5 +118,6 @@ def health_check():
     return {
         "status": "healthy",
         "phase2_enabled": PHASE2_ENABLED,
-        "phase3_enabled": PHASE3_ENABLED
+        "phase3_enabled": PHASE3_ENABLED,
+        "phase4_enabled": PHASE4_ENABLED
     }
