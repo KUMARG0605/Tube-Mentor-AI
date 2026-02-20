@@ -8,7 +8,7 @@ configures middleware, and registers all routers.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routers import search, transcript, summary, quiz, pdf
+from app.routers import search, transcript, summary, quiz, pdf, auth
 
 # Phase 2: Try importing recommendations (optional - requires faiss, sentence-transformers)
 PHASE2_ENABLED = False
@@ -59,6 +59,7 @@ app.add_middleware(
 )
 
 # Register routers - Phase 1 (Core)
+app.include_router(auth.router)  # Authentication
 app.include_router(search.router)
 app.include_router(transcript.router)
 app.include_router(summary.router)
@@ -83,6 +84,7 @@ def root():
     """Return API information and available endpoints."""
     endpoints = {
         "docs": "/docs",
+        "auth": "/api/auth/",
         "search": "/api/search/",
         "transcript": "/api/transcript/",
         "summary": "/api/summary/",

@@ -77,7 +77,7 @@ class QuizQuestion(BaseModel):
 class QuizRequest(BaseModel):
     """Request to generate quiz."""
     video_id: str
-    num_questions: int = 5
+    num_questions: int = 10
 
 
 class QuizResponse(BaseModel):

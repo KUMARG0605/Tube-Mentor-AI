@@ -5,7 +5,7 @@ SQLAlchemy ORM models defining database table structures.
 Each class maps to a PostgreSQL table.
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -85,3 +85,27 @@ class Quiz(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     video = relationship("Video", back_populates="quiz")
+
+
+class User(Base):
+    """User accounts for authentication."""
+    
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(100), unique=True, nullable=True)
+    hashed_password = Column(String(255), nullable=True)  # Null for OAuth users
+    full_name = Column(String(200), nullable=True)
+    avatar_url = Column(String(500), nullable=True)
+    
+    # OAuth fields
+    google_id = Column(String(100), unique=True, nullable=True)
+    auth_provider = Column(String(50), default="local")  # local, google
+    
+    # Account status
+    is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

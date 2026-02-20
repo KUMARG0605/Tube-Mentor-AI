@@ -1,6 +1,13 @@
 """Transcript extraction service for YouTube videos."""
 
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+    TranscriptsDisabled,
+    # NoTranscriptAvailable,
+)
 
 
 def get_transcript(video_id: str, language: str = "en") -> dict:
@@ -45,6 +52,25 @@ def get_transcript(video_id: str, language: str = "en") -> dict:
             "word_count": len(full_text.split()),
         }
 
+    except TranscriptsDisabled:
+        raise ValueError(
+            f"Subtitles/captions are disabled for this video. "
+            f"The video creator has not enabled captions."
+        )
+    except NoTranscriptFound:
+        raise ValueError(
+            f"No transcript found in the requested language. "
+            f"Try a different video or check if captions are available."
+        )
+    except NoTranscriptAvailable:
+        raise ValueError(
+            f"No transcript available for this video. "
+            f"The video may not have any captions."
+        )
+    except VideoUnavailable:
+        raise ValueError(
+            f"Video is unavailable. It may be private, deleted, or region-restricted."
+        )
     except ValueError:
         raise
     except Exception as e:

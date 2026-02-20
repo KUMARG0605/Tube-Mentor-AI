@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     UNSPLASH_API_KEY: str = ""       # For image search
     ELEVENLABS_API_KEY: str = ""     # For text-to-speech
     
+    # JWT Authentication
+    JWT_SECRET_KEY: str = "your-super-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    
     # Groq LLM Settings
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_TEMPERATURE: float = 0.7

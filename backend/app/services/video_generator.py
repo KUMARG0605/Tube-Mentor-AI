@@ -584,12 +584,23 @@ def get_video_status() -> dict:
     """Get status of video generation capabilities."""
     status = check_moviepy()
     
+    is_available = status["moviepy_available"] and status["ffmpeg_available"]
+    
+    if is_available:
+        message = "Video generation ready"
+    elif status["moviepy_available"] and not status["ffmpeg_available"]:
+        message = "FFmpeg not found. Install FFmpeg and add to PATH"
+    elif not status["moviepy_available"]:
+        message = "MoviePy not installed. Run: pip install moviepy"
+    else:
+        message = "Install moviepy and ffmpeg for video generation"
+    
     return {
-        "available": status["moviepy_available"] and status["ffmpeg_available"],
+        "available": is_available,
         "dependencies": status,
         "output_directory": str(VIDEO_DIR),
         "bgm_directory": str(BGM_DIR),
-        "supported_formats": ["mp4", "webm", "avi"] if status["moviepy_available"] else [],
+        "supported_formats": ["mp4", "webm", "avi"] if is_available else [],
         "features": {
             "animations": True,
             "voice_narration": True,
@@ -597,7 +608,7 @@ def get_video_status() -> dict:
             "captions": True,
             "subscribe_ending": True,
         },
-        "message": "Video generation ready" if status["moviepy_available"] else "Install moviepy and ffmpeg for video generation"
+        "message": message
     }
 
 
